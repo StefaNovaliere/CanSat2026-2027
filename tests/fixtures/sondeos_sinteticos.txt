@@ -1,0 +1,29 @@
+# Sondeos INVENTADOS para los tests. No son datos reales.
+<H2>87344 SACO Cordoba Observations at 12Z 15 Jun 2025</H2>
+<PRE>
+-----------------------------------------------------------------------------
+   PRES   HGHT   TEMP   DWPT   RELH   MIXR   DRCT   SKNT   THTA   THTE   THTV
+    hPa      m      C      C      %   g/kg    deg   knot      K      K      K
+-----------------------------------------------------------------------------
+ 1000.0    101
+  956.0    474    2.0   -1.0     80
+  950.0    527    5.5   -0.5     65
+  940.0    617    8.0   -1.5     51
+  925.0    755    8.6   -3.0     44
+  900.0    990    7.0   -5.0     41
+  850.0   1478    3.5   -8.0     43
+</PRE>
+<H3>Station information and sounding indices</H3>
+<H2>87344 SACO Cordoba Observations at 00Z 16 Jun 2025</H2>
+<PRE>
+-----------------------------------------------------------------------------
+   PRES   HGHT   TEMP   DWPT   RELH   MIXR   DRCT   SKNT   THTA   THTE   THTV
+    hPa      m      C      C      %   g/kg    deg   knot      K      K      K
+-----------------------------------------------------------------------------
+ 1000.0     98
+  955.0    474   14.0    2.0     44
+  950.0    519   13.5    1.8     45
+  925.0    744   11.6    1.0     48
+  900.0    975    9.6    0.0     50
+  850.0   1458    5.5   -2.0     58
+</PRE>

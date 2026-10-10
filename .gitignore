@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# PlatformIO
+.pio/
+.vscode/
+
+# salidas del simulador y de la estación terrena
+salidas/
+capturas/
+firmware/test_host/build/
