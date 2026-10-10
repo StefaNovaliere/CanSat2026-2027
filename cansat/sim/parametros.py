@@ -78,5 +78,8 @@ class Mision:
     estabilizacion_s: float = 3.0         # lo que se descarta después de separarse
     espesor_sobrevuelo_m: float = 150.0   # los primeros metros de caída hacen de "sobrevuelo"
     ventana_suelo_s: float = 0.5          # últimos segundos antes de tocar = "medición abajo" (~4 m)
+    espera_aterrizado_s: float = 3.0      # después de tocar el suelo, se espera que el sensor se acomode
+    ventana_aterrizado_s: float = 2.0     # y se promedia este tiempo = "ya en el suelo"
+                                          # (no modela que el sol o el suelo calienten la lata)
     ventana_derivada_s: float = 1.0       # suavizado para la corrección de retardo
-    umbral_falla_modelo_c: float = 1.5    # diferencia entre predicho y medido para decir que el modelo falló
+    umbral_falla_modelo_c: float = 1.5    # diferencia entre predicho y medido en el suelo para decir que el modelo falló

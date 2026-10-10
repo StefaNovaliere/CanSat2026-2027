@@ -55,3 +55,14 @@ def test_corre_con_un_sondeo_y_exporta_telemetria(tmp_path):
     assert len(paquetes) > 100
     assert paquetes[0].altitude_m > 250 and paquetes[-1].state == 5
     assert r.errores == 0
+
+
+def test_ya_en_el_suelo_mide_bien_aunque_la_inversion_sea_fuerte():
+    rng = np.random.default_rng(5)
+    atm = atmosfera.con_inversion(salto_c=10.0, espesor_inversion_m=50.0)
+    des = descenso.simular(atm, Vuelo(), 30, rng)
+    res = [mision.analizar(atm, des, i, rng) for i in range(des.corridas)]
+    err_bajando = np.mean([r.medicion_suelo_c["termistor corregido"] - r.t_suelo_real_c for r in res])
+    err_quieto = np.mean([r.medicion_aterrizado_c["termistor corregido"] - r.t_suelo_real_c for r in res])
+    assert err_bajando > 0.3
+    assert abs(err_quieto) < 0.1

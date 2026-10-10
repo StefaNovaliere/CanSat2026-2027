@@ -29,17 +29,18 @@ def _resumir(nombre, atm, des, res, mis: Mision) -> str:
 
     lineas = [f"== {nombre} ({len(res)} vuelos) ==",
               f"T real en el suelo: {res[0].t_suelo_real_c:.1f} °C",
-              f"{'':26}{'predicción desde arriba':>26}{'medición abajo':>20}"]
+              f"{'':22}{'predicción desde arriba':>25}{'últimos metros':>18}{'ya en el suelo':>18}"]
     for clave in res[0].prediccion_c:
         pred = [r.prediccion_c[clave] - r.t_suelo_real_c for r in res]
         med = [r.medicion_suelo_c[clave] - r.t_suelo_real_c for r in res]
-        lineas.append(f"{clave:26}{ms(pred):>26}{ms(med):>20}")
+        quieto = [r.medicion_aterrizado_c[clave] - r.t_suelo_real_c for r in res]
+        lineas.append(f"{clave:22}{ms(pred):>25}{ms(med):>18}{ms(quieto):>18}")
     det = np.mean([r.falla_detectada for r in res]) * 100
     dp = [(r.p_suelo_predicha_pa - r.p_suelo_real_pa) / 100 for r in res]
     lineas += [
         "(errores en °C respecto del valor real: media ± desvío)",
-        f"Vuelos donde el modelo de arriba falla por más de {mis.umbral_falla_modelo_c} °C "
-        f"(termistor corregido): {det:.0f} %",
+        f"Vuelos donde la predicción de arriba difiere en más de {mis.umbral_falla_modelo_c} °C "
+        f"de lo medido ya en el suelo (termistor corregido): {det:.0f} %",
         f"Error al predecir la presión del suelo: {ms(dp)} hPa",
         f"Duración del descenso: {np.mean(des.t_aterrizaje_s):.1f} ± {np.std(des.t_aterrizaje_s):.1f} s, "
         f"velocidad final {np.mean([r.velocidad_final_ms for r in res]):.1f} m/s",
@@ -88,7 +89,7 @@ def _grafico_errores(todos, ruta):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(len(todos), 1, figsize=(8, 3.2 * len(todos)), squeeze=False)
+    fig, axes = plt.subplots(len(todos), 1, figsize=(8, 4.2 * len(todos)), squeeze=False)
     for ax, (nombre, res) in zip(axes[:, 0], todos):
         datos, etiquetas = [], []
         for clave in res[0].prediccion_c:
@@ -96,7 +97,10 @@ def _grafico_errores(todos, ruta):
             etiquetas.append(f"predicción · {clave}")
         for clave in res[0].medicion_suelo_c:
             datos.append([r.medicion_suelo_c[clave] - r.t_suelo_real_c for r in res])
-            etiquetas.append(f"medición abajo · {clave}")
+            etiquetas.append(f"últimos metros · {clave}")
+        for clave in res[0].medicion_aterrizado_c:
+            datos.append([r.medicion_aterrizado_c[clave] - r.t_suelo_real_c for r in res])
+            etiquetas.append(f"ya en el suelo · {clave}")
         ax.boxplot(datos, orientation="horizontal", tick_labels=etiquetas, showfliers=False)
         ax.axvline(0, color="k", lw=0.8)
         ax.set_title(nombre)
@@ -113,12 +117,14 @@ def _guardar_csv(nombre, res, ruta):
         claves = list(res[0].prediccion_c)
         w.writerow(["escenario", "t_suelo_real_c", "p_suelo_real_pa", "p_suelo_predicha_pa",
                     "falla_detectada", "duracion_s"]
-                   + [f"pred {c}" for c in claves] + [f"suelo {c}" for c in claves])
+                   + [f"pred {c}" for c in claves] + [f"ultimos metros {c}" for c in claves]
+                   + [f"en el suelo {c}" for c in claves])
         for r in res:
             w.writerow([nombre, f"{r.t_suelo_real_c:.3f}", f"{r.p_suelo_real_pa:.1f}",
                         f"{r.p_suelo_predicha_pa:.1f}", int(r.falla_detectada), f"{r.duracion_s:.2f}"]
                        + [f"{r.prediccion_c[c]:.3f}" for c in claves]
-                       + [f"{r.medicion_suelo_c[c]:.3f}" for c in claves])
+                       + [f"{r.medicion_suelo_c[c]:.3f}" for c in claves]
+                       + [f"{r.medicion_aterrizado_c[c]:.3f}" for c in claves])
 
 
 def exportar_telemetria(atm, des, rng, ruta, hz=5.0, perdida=0.05):

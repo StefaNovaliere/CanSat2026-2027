@@ -32,7 +32,8 @@ class Resultado:
     t_suelo_real_c: float
     p_suelo_real_pa: float
     prediccion_c: dict[str, float] = field(default_factory=dict)
-    medicion_suelo_c: dict[str, float] = field(default_factory=dict)
+    medicion_suelo_c: dict[str, float] = field(default_factory=dict)      # últimos metros bajando
+    medicion_aterrizado_c: dict[str, float] = field(default_factory=dict)  # quieto en el suelo
     p_suelo_predicha_pa: float = np.nan
     falla_detectada: bool = False
     duracion_s: float = np.nan
@@ -51,10 +52,16 @@ def analizar(atm: Atmosfera, des: Descensos, i: int, rng: np.random.Generator,
              mision: Mision = Mision(), baro: Barometro = Barometro(), gps: GPS = GPS(),
              termometros: tuple[Termometro, ...] = (TERMISTOR, INTERNO),
              guardar_graficos: bool = False) -> Resultado:
-    t, z, v = des.corrida(i)
+    t_vuelo, z_vuelo, v = des.corrida(i)
+    t_tierra = float(t_vuelo[-1])
+    # Se sigue midiendo unos segundos con la lata quieta en el suelo.
+    extra = mision.espera_aterrizado_s + mision.ventana_aterrizado_s + 0.5
+    n_extra = int(round(extra / des.dt_s))
+    t = np.concatenate([t_vuelo, t_tierra + des.dt_s * np.arange(1, n_extra + 1)])
+    z = np.concatenate([z_vuelo, np.zeros(n_extra)])
     aire_c = atm.temperatura(z)
     r = Resultado(float(atm.temperatura(0.0)), float(atm.presion(0.0)),
-                  duracion_s=float(t[-1]), velocidad_final_ms=float(v[-2]))
+                  duracion_s=t_tierra, velocidad_final_ms=float(v[-2]))
 
     alt = sensores.gps_altura(t, z, gps, rng)
     alt_inicial = float(np.median(alt.valor[alt.t_s < 0.5]))
@@ -64,7 +71,11 @@ def analizar(atm: Atmosfera, des: Descensos, i: int, rng: np.random.Generator,
         return a, (ts >= mision.estabilizacion_s) & (a >= alt_inicial - mision.espesor_sobrevuelo_m)
 
     def ultimos_segundos(ts):
-        return ts >= t[-1] - mision.ventana_suelo_s
+        return (ts >= t_tierra - mision.ventana_suelo_s) & (ts <= t_tierra)
+
+    def ya_en_el_suelo(ts):
+        desde = t_tierra + mision.espera_aterrizado_s
+        return (ts >= desde) & (ts <= desde + mision.ventana_aterrizado_s)
 
     if guardar_graficos:
         r.graficos = {"t": t, "z": z, "aire": aire_c, "series": {}}
@@ -75,17 +86,19 @@ def analizar(atm: Atmosfera, des: Descensos, i: int, rng: np.random.Generator,
         serie, _ = sensores.termometro(t, aire_c, sensor, rng)
         a, m = sobrevuelo(serie.t_s)
         abajo = ultimos_segundos(serie.t_s)
+        quieto = ya_en_el_suelo(serie.t_s)
         corregida = corregir_retardo(serie, sensor.tau_s, mision.ventana_derivada_s)
         for etiqueta, valores in ((f"{sensor.nombre} corregido", corregida),
                                   (f"{sensor.nombre} crudo", serie.valor)):
             r.prediccion_c[etiqueta] = _prediccion(a, valores, m)
             r.medicion_suelo_c[etiqueta] = float(np.mean(valores[abajo]))
+            r.medicion_aterrizado_c[etiqueta] = float(np.mean(valores[quieto]))
             if etiqueta == clave and m.any():
                 t_media_sobrevuelo = float(np.mean(valores[m]))
             if guardar_graficos:
                 r.graficos["series"][etiqueta] = (serie.t_s, a, valores, m)
 
-    r.falla_detectada = bool(abs(r.medicion_suelo_c[clave] - r.prediccion_c[clave])
+    r.falla_detectada = bool(abs(r.medicion_aterrizado_c[clave] - r.prediccion_c[clave])
                              > mision.umbral_falla_modelo_c)
 
     # Presión en el suelo predicha desde arriba con la ecuación hipsométrica,
