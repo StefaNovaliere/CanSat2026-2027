@@ -1,8 +1,12 @@
-"""Misión "sobrevuelo vs. aterrizaje".
+"""Misión "los últimos 400 metros".
 
-Con los primeros metros de caída (el "sobrevuelo") se predice cómo está la
-atmósfera en el suelo. Después se compara con lo que mide la lata al final
-del descenso (el "aterrizaje") y con el valor real del simulador.
+Efecto: con los primeros metros de caída (el "sobrevuelo") se predice cómo
+está la atmósfera en el suelo, y se compara con lo que mide la lata al final
+del descenso y ya aterrizada.
+
+Causa: dos termómetros infrarrojos, uno mirando al cielo y otro al suelo,
+miden cuánto calor pierde el suelo por radiación. Con cielo despejado pierde
+mucho, se enfría y se forma la inversión; con nubes, no.
 """
 
 from __future__ import annotations
@@ -12,10 +16,11 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.ndimage import uniform_filter1d
 
-from . import sensores
+from . import radiacion, sensores
 from .atmosfera import G, RD, Atmosfera
 from .descenso import Descensos
-from .parametros import GPS, INTERNO, TERMISTOR, Barometro, Mision, Termometro
+from .parametros import (GPS, INTERNO, RADIOMETRO_ABAJO, RADIOMETRO_ARRIBA, TERMISTOR, Barometro,
+                         Mision, Radiometro, Termometro)
 
 
 def corregir_retardo(serie: sensores.Serie, tau_s: float, ventana_s: float) -> np.ndarray:
@@ -38,6 +43,13 @@ class Resultado:
     falla_detectada: bool = False
     duracion_s: float = np.nan
     velocidad_final_ms: float = np.nan
+    # radiómetro
+    cielo_medido_c: float = np.nan
+    suelo_medido_c: float = np.nan
+    indicador_wm2: float = np.nan        # con lo que miden los sensores
+    indicador_ideal_wm2: float = np.nan  # con sensores perfectos y sin bamboleo
+    despejado_detectado: bool = False
+    despejado_real: bool = False
     graficos: dict | None = None
 
 
@@ -51,6 +63,7 @@ def _prediccion(alt, temp, mascara):
 def analizar(atm: Atmosfera, des: Descensos, i: int, rng: np.random.Generator,
              mision: Mision = Mision(), baro: Barometro = Barometro(), gps: GPS = GPS(),
              termometros: tuple[Termometro, ...] = (TERMISTOR, INTERNO),
+             radiometros: tuple[Radiometro, Radiometro] | None = (RADIOMETRO_ARRIBA, RADIOMETRO_ABAJO),
              guardar_graficos: bool = False) -> Resultado:
     t_vuelo, z_vuelo, v = des.corrida(i)
     t_tierra = float(t_vuelo[-1])
@@ -109,4 +122,37 @@ def analizar(atm: Atmosfera, des: Descensos, i: int, rng: np.random.Generator,
         t_medio_k = 273.15 + 0.5 * (r.prediccion_c[clave] + t_media_sobrevuelo)
         r.p_suelo_predicha_pa = float(np.mean(p.valor[m_p])
                                       * np.exp(G * np.mean(a_p[m_p]) / (RD * t_medio_k)))
+
+    if radiometros is not None:
+        _radiometro(atm, t, z, t_tierra, alt, rng, mision, radiometros, r)
     return r
+
+
+def _radiometro(atm, t, z, t_tierra, alt, rng, mision: Mision, radiometros, r: Resultado):
+    arriba, abajo = radiometros
+    k0 = radiacion.K0
+    # El cielo se calcula a 20 Hz (alcanza para el péndulo) y se interpola.
+    paso = max(1, int(round(0.05 / (t[1] - t[0]))))
+    t20, z20 = t[::paso], z[::paso]
+    inclinacion = radiacion.bamboleo(t20, rng)
+    cielo_k = np.interp(t, t20, radiacion.lectura_arriba_k(atm, z20, inclinacion, arriba.campo_mitad_deg))
+    suelo_k = np.full_like(t, atm.temperatura(0.0) + k0)
+
+    s_arriba = radiacion.medir(t, cielo_k, arriba, rng)
+    s_abajo = radiacion.medir(t, suelo_k, abajo, rng)
+
+    vuelo = (s_arriba.t_s >= mision.estabilizacion_s) & (s_arriba.t_s <= t_tierra)
+    r.cielo_medido_c = float(np.median(s_arriba.valor[vuelo]))
+    a_abajo = np.interp(s_abajo.t_s, alt.t_s, alt.valor)
+    ultimos = ((s_abajo.t_s >= mision.estabilizacion_s) & (s_abajo.t_s <= t_tierra)
+               & (a_abajo <= mision.altura_suelo_radiometro_m))
+    if not ultimos.any():
+        ultimos = (s_abajo.t_s <= t_tierra)
+    r.suelo_medido_c = float(np.median(s_abajo.valor[ultimos]))
+    r.indicador_wm2 = float(radiacion.indicador_enfriamiento(r.cielo_medido_c, r.suelo_medido_c))
+    r.despejado_detectado = r.indicador_wm2 < mision.umbral_despejado_wm2
+
+    en_vuelo = (t20 >= mision.estabilizacion_s) & (t20 <= t_tierra)
+    ideal = radiacion.lectura_arriba_k(atm, z20[en_vuelo], np.zeros(en_vuelo.sum()), arriba.campo_mitad_deg)
+    r.indicador_ideal_wm2 = float(radiacion.indicador_enfriamiento(np.median(ideal) - k0, atm.temperatura(0.0)))
+    r.despejado_real = atm.base_nubes() is None

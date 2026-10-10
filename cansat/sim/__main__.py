@@ -1,4 +1,4 @@
-"""Simulador, etapa 1: descenso vertical + sensores + misión sobrevuelo/aterrizaje.
+"""Simulador, etapa 1: descenso vertical + sensores + misión "los últimos 400 metros".
 
     python -m cansat.sim                                  # estándar e inversión, 500 vuelos cada uno
     python -m cansat.sim --sondeo data/sondeos/*.csv      # cada sondeo real como atmósfera
@@ -46,6 +46,16 @@ def _resumir(nombre, atm, des, res, mis: Mision) -> str:
         f"Duración del descenso: {np.mean(des.t_aterrizaje_s):.1f} ± {np.std(des.t_aterrizaje_s):.1f} s, "
         f"velocidad final {np.mean([r.velocidad_final_ms for r in res]):.1f} m/s",
     ]
+    if not np.isnan(res[0].indicador_wm2):
+        base = atm.base_nubes()
+        cielo = "despejado" if base is None else f"nubes a {base:.0f} m"
+        lineas += [
+            f"Radiómetro ({cielo} según el sondeo): cielo {ms([r.cielo_medido_c for r in res])} °C, "
+            f"suelo {ms([r.suelo_medido_c for r in res])} °C",
+            f"  indicador de enfriamiento {ms([r.indicador_wm2 for r in res])} W/m² "
+            f"(con sensores perfectos {np.mean([r.indicador_ideal_wm2 for r in res]):+.0f}), "
+            f"clasificado despejado en {100 * np.mean([r.despejado_detectado for r in res]):.0f} % de los vuelos",
+        ]
     return "\n".join(lineas)
 
 
@@ -118,6 +128,9 @@ CLAVE = "termistor corregido"
 def _fila_comparacion(atm, res, mis: Mision) -> dict:
     pred = np.array([r.prediccion_c[CLAVE] - r.t_suelo_real_c for r in res])
     suelo = np.array([r.medicion_aterrizado_c[CLAVE] - r.t_suelo_real_c for r in res])
+    ind = np.array([r.indicador_wm2 for r in res])
+    base = atm.base_nubes()
+    zz = np.linspace(0, 400, 401)
     return {
         "escenario": atm.nombre,
         "t_suelo_c": round(res[0].t_suelo_real_c, 2),
@@ -127,6 +140,11 @@ def _fila_comparacion(atm, res, mis: Mision) -> dict:
         "error_en_el_suelo_c": round(float(np.mean(suelo)), 2),
         "sd_en_el_suelo_c": round(float(np.std(suelo)), 2),
         "falla_detectada_pct": round(100 * float(np.mean([r.falla_detectada for r in res])), 1),
+        "inversion_c": round(float(np.max(atm.temperatura(zz)) - atm.temperatura(0.0)), 2),
+        "nubes_base_m": "" if base is None else round(base),
+        "indicador_wm2": round(float(np.mean(ind)), 1),
+        "sd_indicador_wm2": round(float(np.std(ind)), 1),
+        "despejado_detectado_pct": round(100 * float(np.mean([r.despejado_detectado for r in res])), 1),
     }
 
 
@@ -143,7 +161,52 @@ def _tabla_comparacion(filas, mis: Mision) -> str:
     n_falla = sum(f["falla_detectada_pct"] >= 50 for f in filas)
     lineas.append(f"La predicción desde arriba falla por más de {mis.umbral_falla_modelo_c} °C "
                   f"en {n_falla} de {len(filas)} escenarios.")
+    lineas += ["", "== Causa: radiómetro infrarrojo ==",
+               f"{'escenario':26}{'cielo (sondeo)':>16}{'inversión':>11}{'indicador (W/m²)':>20}{'clasificado despejado':>24}"]
+    for f in filas:
+        cielo = "despejado" if f["nubes_base_m"] == "" else f"nubes {f['nubes_base_m']} m"
+        lineas.append(f"{f['escenario']:26}{cielo:>16}{f['inversion_c']:+9.1f} °C"
+                      f"{f['indicador_wm2']:+13.0f} ± {f['sd_indicador_wm2']:<4.0f}"
+                      f"{f['despejado_detectado_pct']:20.0f} %")
+    aciertos = sum((f["despejado_detectado_pct"] >= 50) == (f["nubes_base_m"] == "") for f in filas)
+    lineas.append(f"El radiómetro clasifica bien el cielo en {aciertos} de {len(filas)} escenarios "
+                  f"(umbral {mis.umbral_despejado_wm2:.0f} W/m²).")
     return "\n".join(lineas)
+
+
+def _grafico_causa_efecto(filas, mis: Mision, ruta):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7.5, 5.2))
+    ax.axvline(mis.umbral_despejado_wm2, color="0.5", ls="--", lw=1)
+    ax.axhline(0, color="0.8", lw=0.8)
+    usados = []
+    for despejado, color, etiqueta in ((True, "tab:blue", "cielo despejado (sondeo)"),
+                                       (False, "tab:gray", "con nubes bajas o medias (sondeo)")):
+        sel = [f for f in filas if (f["nubes_base_m"] == "") == despejado]
+        if not sel:
+            continue
+        ax.errorbar([f["indicador_wm2"] for f in sel], [f["inversion_c"] for f in sel],
+                    xerr=[f["sd_indicador_wm2"] for f in sel], fmt="o", color=color, ms=7,
+                    capsize=3, label=etiqueta)
+        for f in sel:
+            # Si hay puntos casi encima de este, la etiqueta se corre para abajo.
+            vecinos = sum(1 for o in usados if abs(o[0] - f["indicador_wm2"]) < 6 and abs(o[1] - f["inversion_c"]) < 0.6)
+            usados.append((f["indicador_wm2"], f["inversion_c"]))
+            nombre = f["escenario"].split()[-2] if f["escenario"][:5].isdigit() else f["escenario"]
+            ax.annotate(nombre, (f["indicador_wm2"], f["inversion_c"]), textcoords="offset points",
+                        xytext=(6, 5 - 11 * vecinos), fontsize=7.5, color="0.3")
+    ax.text(mis.umbral_despejado_wm2, ax.get_ylim()[1], " umbral", va="top", fontsize=8, color="0.4")
+    ax.set_xlabel("Indicador de enfriamiento medido por el radiómetro (W/m²)\n← el suelo pierde más calor")
+    ax.set_ylabel("Fuerza de la inversión en los primeros 400 m (°C)")
+    ax.set_title("Causa (radiación) contra efecto (inversión)")
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, frameon=False)
+    fig.tight_layout()
+    fig.savefig(ruta, dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
 def _grafico_comparacion(filas, ruta):
@@ -272,6 +335,7 @@ def main(argv=None):
         print(tabla + "\n")
         textos.append(tabla)
         _grafico_comparacion(filas, salida / "comparacion.png")
+        _grafico_causa_efecto(filas, mis, salida / "causa_efecto.png")
         with open(salida / "comparacion.csv", "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=list(filas[0]))
             w.writeheader()

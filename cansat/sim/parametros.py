@@ -83,3 +83,23 @@ class Mision:
                                           # (no modela que el sol o el suelo calienten la lata)
     ventana_derivada_s: float = 1.0       # suavizado para la corrección de retardo
     umbral_falla_modelo_c: float = 1.5    # diferencia entre predicho y medido en el suelo para decir que el modelo falló
+    altura_suelo_radiometro_m: float = 60.0  # el sensor que mira abajo se usa en los últimos metros
+    umbral_despejado_wm2: float = -50.0      # indicador por debajo de esto = cielo despejado (supuesto)
+
+
+@dataclass
+class Radiometro:
+    """Termómetro infrarrojo tipo termopila (estilo MLX90614). Todo supuesto
+    hasta probar uno: hay que medir el cielo con el sensor en mano."""
+    nombre: str
+    campo_mitad_deg: float = 45.0      # la mitad del campo de visión (hay versiones de 90° y más angostas)
+    tau_s: float = 0.15
+    ruido_c: float = 0.2
+    sd_error_fijo_c: float = 1.0       # a temperaturas bajo cero estos sensores son menos precisos
+    sd_choque_termico_c: float = 2.0   # error al cambiar de golpe la temperatura del sensor
+    tau_choque_s: float = 8.0
+    frecuencia_hz: float = 10
+
+
+RADIOMETRO_ARRIBA = Radiometro("infrarrojo arriba")
+RADIOMETRO_ABAJO = Radiometro("infrarrojo abajo")
