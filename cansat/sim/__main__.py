@@ -1,10 +1,11 @@
 """Simulador, etapa 1: descenso vertical + sensores + misión sobrevuelo/aterrizaje.
 
-    python -m cansat.sim                       # estándar e inversión, 500 vuelos cada uno
-    python -m cansat.sim --sondeo data/sondeos/87344_2025_06.txt --indice 3
+    python -m cansat.sim                                  # estándar e inversión, 500 vuelos cada uno
+    python -m cansat.sim --sondeo data/sondeos/*.csv      # cada sondeo real como atmósfera
     python -m cansat.sim --corridas 2000 --telemetria
 
-Deja gráficos, un CSV por vuelo y un resumen en --salida.
+Deja gráficos, un CSV por vuelo y un resumen en --salida. Con varios
+escenarios también arma una tabla y un gráfico que los comparan.
 """
 
 from __future__ import annotations
@@ -111,6 +112,64 @@ def _grafico_errores(todos, ruta):
     plt.close(fig)
 
 
+CLAVE = "termistor corregido"
+
+
+def _fila_comparacion(atm, res, mis: Mision) -> dict:
+    pred = np.array([r.prediccion_c[CLAVE] - r.t_suelo_real_c for r in res])
+    suelo = np.array([r.medicion_aterrizado_c[CLAVE] - r.t_suelo_real_c for r in res])
+    return {
+        "escenario": atm.nombre,
+        "t_suelo_c": round(res[0].t_suelo_real_c, 2),
+        "t_400m_c": round(float(atm.temperatura(400.0)), 2),
+        "error_prediccion_c": round(float(np.mean(pred)), 2),
+        "sd_prediccion_c": round(float(np.std(pred)), 2),
+        "error_en_el_suelo_c": round(float(np.mean(suelo)), 2),
+        "sd_en_el_suelo_c": round(float(np.std(suelo)), 2),
+        "falla_detectada_pct": round(100 * float(np.mean([r.falla_detectada for r in res])), 1),
+    }
+
+
+def _tabla_comparacion(filas, mis: Mision) -> str:
+    lineas = [f"== Comparación ({CLAVE}) ==",
+              f"{'escenario':26}{'T suelo':>9}{'T 400 m':>9}{'error predicción':>20}"
+              f"{'error en el suelo':>20}{'falla detectada':>17}"]
+    for f in filas:
+        lineas.append(
+            f"{f['escenario']:26}{f['t_suelo_c']:9.1f}{f['t_400m_c']:9.1f}"
+            f"{f['error_prediccion_c']:+13.1f} ± {f['sd_prediccion_c']:3.1f}"
+            f"{f['error_en_el_suelo_c']:+13.1f} ± {f['sd_en_el_suelo_c']:3.1f}"
+            f"{f['falla_detectada_pct']:15.0f} %")
+    n_falla = sum(f["falla_detectada_pct"] >= 50 for f in filas)
+    lineas.append(f"La predicción desde arriba falla por más de {mis.umbral_falla_modelo_c} °C "
+                  f"en {n_falla} de {len(filas)} escenarios.")
+    return "\n".join(lineas)
+
+
+def _grafico_comparacion(filas, ruta):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    y = np.arange(len(filas))[::-1]
+    fig, ax = plt.subplots(figsize=(8, 1.0 + 0.55 * len(filas)))
+    ax.axvline(0, color="k", lw=0.8)
+    ax.errorbar([f["error_prediccion_c"] for f in filas], y + 0.12,
+                xerr=[f["sd_prediccion_c"] for f in filas], fmt="o", color="tab:red",
+                capsize=3, label="predicción desde arriba (primeros 150 m)")
+    ax.errorbar([f["error_en_el_suelo_c"] for f in filas], y - 0.12,
+                xerr=[f["sd_en_el_suelo_c"] for f in filas], fmt="s", color="k",
+                capsize=3, label="medición ya en el suelo")
+    ax.set_yticks(y, [f["escenario"] for f in filas])
+    ax.set_xlabel("Error respecto de la temperatura real del suelo (°C)")
+    ax.set_title("Termistor corregido, por escenario")
+    ax.grid(alpha=0.3, axis="x")
+    ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2, frameon=False)
+    fig.tight_layout()
+    fig.savefig(ruta, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _guardar_csv(nombre, res, ruta):
     with open(ruta, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -165,15 +224,21 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Simulador CanSat, etapa 1.")
     ap.add_argument("--corridas", type=int, default=500)
     ap.add_argument("--semilla", type=int, default=1)
-    ap.add_argument("--sondeo", help="archivo de Wyoming para usar como atmósfera")
-    ap.add_argument("--indice", type=int, default=0, help="qué sondeo del archivo usar")
+    ap.add_argument("--sondeo", nargs="+", help="uno o más archivos de Wyoming para usar como atmósfera")
+    ap.add_argument("--indice", type=int,
+                    help="en archivos con varios sondeos, usar solo ese (por defecto, todos)")
     ap.add_argument("--salida", default="salidas/sim")
     ap.add_argument("--telemetria", action="store_true",
                     help="exporta la telemetría de un vuelo para probar la estación terrena")
     args = ap.parse_args(argv)
 
     if args.sondeo:
-        escenarios = [atmosfera.desde_sondeo(sondeos.leer(args.sondeo)[args.indice])]
+        lista = []
+        for archivo in args.sondeo:
+            leidos = sondeos.leer(archivo)
+            lista += [leidos[args.indice]] if args.indice is not None else leidos
+        lista.sort(key=lambda s: (s.fecha is None, s.fecha))
+        escenarios = [atmosfera.desde_sondeo(s) for s in lista]
     else:
         escenarios = [atmosfera.estandar(), atmosfera.con_inversion()]
 
@@ -181,7 +246,7 @@ def main(argv=None):
     salida.mkdir(parents=True, exist_ok=True)
     vuelo, mis = Vuelo(), Mision()
     rng = np.random.default_rng(args.semilla)
-    todos, textos = [], []
+    todos, textos, filas = [], [], []
 
     for atm in escenarios:
         des = descenso.simular(atm, vuelo, args.corridas, rng)
@@ -195,11 +260,22 @@ def main(argv=None):
         print(texto + "\n")
         textos.append(texto)
         todos.append((atm.nombre, res))
+        filas.append(_fila_comparacion(atm, res, mis))
         if args.telemetria and len(todos) == 1:
             n = exportar_telemetria(atm, des, rng, salida / "telemetria_simulada.bin")
             print(f"Telemetría simulada: {n} paquetes en {salida / 'telemetria_simulada.bin'}\n")
 
-    _grafico_errores(todos, salida / "errores.png")
+    if len(todos) <= 3:
+        _grafico_errores(todos, salida / "errores.png")
+    if len(filas) > 1:
+        tabla = _tabla_comparacion(filas, mis)
+        print(tabla + "\n")
+        textos.append(tabla)
+        _grafico_comparacion(filas, salida / "comparacion.png")
+        with open(salida / "comparacion.csv", "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(filas[0]))
+            w.writeheader()
+            w.writerows(filas)
     (salida / "resumen.txt").write_text("\n\n".join(textos) + "\n", encoding="utf-8")
     print(f"Gráficos y CSV en {salida}/")
 

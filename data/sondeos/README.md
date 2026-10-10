@@ -18,10 +18,16 @@ python -m cansat.sondeos data/sondeos/*.csv --capa 400 --grafico salidas/sondeos
 
 Ojo: SACO está al lado de la ciudad, no en el lugar de lanzamiento. Sirve como referencia de cómo se comporta la capa cerca del suelo, no como dato exacto del sitio.
 
+Ojo 2: el primer punto de cada sondeo puede venir de la estación de superficie y no de la sonda, y los primeros metros son la parte menos confiable de un radiosondeo. Por ejemplo, el del 16/06/2023 salta de 0,0 °C a 3,8 °C en 6 m.
+
 ## Archivos
 
 | Archivo | Sondeo | Fecha de descarga | Quién |
 | --- | --- | --- | --- |
+| `2023060412-87344.csv` | 04/06/2023 12Z (lanzado 11:39 UTC) | 10/10/2026 | |
+| `2023061612-87344.csv` | 16/06/2023 12Z (lanzado 11:33 UTC) | 10/10/2026 | |
+| `2024060212-87344.csv` | 02/06/2024 12Z (lanzado 11:34 UTC) | 10/10/2026 | |
+| `2024062212-87344.csv` | 22/06/2024 12Z (lanzado 11:36 UTC) | 10/10/2026 | |
 | `2025060312-87344.csv` | 03/06/2025 12Z (lanzado 11:36 UTC) | 09/10/2026 | |
 | `2025060812-87344.csv` | 08/06/2025 12Z (lanzado 11:42 UTC) | 09/10/2026 | |
 | `2025061512-87344.csv` | 15/06/2025 12Z (lanzado 11:38 UTC) | 09/10/2026 | |

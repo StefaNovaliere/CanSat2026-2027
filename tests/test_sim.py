@@ -66,3 +66,13 @@ def test_ya_en_el_suelo_mide_bien_aunque_la_inversion_sea_fuerte():
     err_quieto = np.mean([r.medicion_aterrizado_c["termistor corregido"] - r.t_suelo_real_c for r in res])
     assert err_bajando > 0.3
     assert abs(err_quieto) < 0.1
+
+
+def test_varios_sondeos_arman_la_comparacion(tmp_path):
+    from pathlib import Path
+    fx = Path(__file__).parent / "fixtures"
+    sim.main(["--sondeo", str(fx / "sondeos_sinteticos.txt"), str(fx / "2025061512-87344_recorte.csv"),
+              "--corridas", "10", "--salida", str(tmp_path)])
+    filas = (tmp_path / "comparacion.csv").read_text().strip().splitlines()
+    assert len(filas) == 1 + 3  # encabezado + 2 sondeos del txt + 1 del csv
+    assert (tmp_path / "comparacion.png").exists()

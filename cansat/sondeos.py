@@ -250,7 +250,7 @@ def graficar(sondeos: list[Sondeo], ruta: str | Path, espesor_m: float, tope_m: 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(6, 7))
+    fig, ax = plt.subplots(figsize=(8.5, 7))
     ax.axhspan(0, espesor_m, color="0.92", zorder=0, label=f"caída (0 a {espesor_m:.0f} m)")
     for s in sondeos:
         ok = s.agl_m <= tope_m
@@ -259,12 +259,12 @@ def graficar(sondeos: list[Sondeo], ruta: str | Path, espesor_m: float, tope_m: 
     ax.set_ylabel("Altura sobre el suelo (m)")
     ax.set_ylim(0, tope_m)
     ax.grid(alpha=0.3)
-    if len(sondeos) <= 12:
-        ax.legend(fontsize=8)
+    if len(sondeos) <= 16:
+        ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1.0), frameon=False)
     ax.set_title("Perfiles de temperatura")
     fig.tight_layout()
     Path(ruta).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(ruta, dpi=150)
+    fig.savefig(ruta, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
