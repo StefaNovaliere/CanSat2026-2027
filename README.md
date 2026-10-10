@@ -32,13 +32,13 @@ Para el firmware hace falta PlatformIO (la extensión de VS Code alcanza).
 python -m cansat.sim --telemetria
 
 # lo mismo con un sondeo real como atmósfera
-python -m cansat.sim --sondeo data/sondeos/87344_2025_06.txt --indice 3
+python -m cansat.sim --sondeo data/sondeos/2025061512-87344.csv
 
 # estación terrena con la telemetría simulada (o --puerto COM3 con la radio)
 python -m cansat.estacion --archivo salidas/sim/telemetria_simulada.bin
 
 # análisis de sondeos
-python -m cansat.sondeos data/sondeos/*.txt --grafico salidas/sondeos.png
+python -m cansat.sondeos data/sondeos/*.csv --grafico salidas/sondeos.png
 
 # tests (también compila el paquete del firmware con g++ y lo compara con Python)
 python -m pytest

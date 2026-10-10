@@ -1,12 +1,16 @@
-"""Lectura y análisis de radiosondeos en el formato de texto de la U. de Wyoming.
+"""Lectura y análisis de radiosondeos de la U. de Wyoming.
 
 Uso:
-    python -m cansat.sondeos data/sondeos/*.txt --capa 400 --grafico salidas/sondeos.png
+    python -m cansat.sondeos data/sondeos/* --capa 400 --grafico salidas/sondeos.png
 
-Lee la tabla TEXT:LIST (columnas de 7 caracteres: PRES HGHT TEMP DWPT ...).
-Un archivo puede tener varios sondeos; cada uno empieza con una línea tipo
-"87344 SACO Cordoba Observations at 12Z 15 Jun 2025". Las líneas que empiezan
-con # se ignoran.
+Lee dos formatos:
+- CSV de la página nueva (un sondeo por archivo, un punto por segundo).
+  Si el archivo se llama como lo baja la página, por ejemplo
+  "2025061512-87344.csv", de ahí salen la fecha nominal y la estación.
+- Tabla TEXT:LIST de la página vieja (columnas de 7 caracteres: PRES HGHT
+  TEMP DWPT ...). Un archivo puede tener varios sondeos; cada uno empieza con
+  una línea tipo "87344 SACO Cordoba Observations at 12Z 15 Jun 2025". Las
+  líneas que empiezan con # se ignoran.
 """
 
 from __future__ import annotations
@@ -156,8 +160,61 @@ def parsear_texto(texto: str) -> list[Sondeo]:
     return sondeos
 
 
+# Columnas del CSV de la página nueva -> nombres que usamos acá.
+_COLUMNAS_CSV = {
+    "pressure_hPa": "PRES",
+    "geopotential height_m": "HGHT",
+    "temperature_C": "TEMP",
+    "dew point temperature_C": "DWPT",
+    "relative humidity_%": "RELH",
+    "mixing ratio_g/kg": "MIXR",
+    "wind direction_degree": "DRCT",
+    "wind speed_m/s": "SPED",
+    "latitude": "LAT",
+    "longitude": "LON",
+}
+_RE_NOMBRE_CSV = re.compile(r"(\d{4})(\d{2})(\d{2})(\d{2})-(\d{5})")
+
+
+def parsear_csv(texto: str, nombre_archivo: str = "") -> Sondeo | None:
+    filas = list(csv.DictReader(texto.splitlines()))
+    if not filas:
+        return None
+    filas = [{k.strip(): v for k, v in f.items() if k} for f in filas]
+    cols = {corto: np.array([_numero(f.get(largo, "")) for f in filas])
+            for largo, corto in _COLUMNAS_CSV.items()}
+
+    estacion, fecha = None, None
+    m = _RE_NOMBRE_CSV.search(nombre_archivo)
+    if m:
+        anio, mes, dia, hora, estacion = m.groups()
+        fecha = datetime(int(anio), int(mes), int(dia), int(hora), tzinfo=timezone.utc)
+    else:
+        # Sin nombre estándar: hora sinóptica más cercana al lanzamiento.
+        primero = datetime.fromisoformat(filas[0]["time"].strip()).replace(tzinfo=timezone.utc)
+        horas = primero.hour + primero.minute / 60
+        hora = int(round(horas / 3) * 3) % 24
+        fecha = primero.replace(hour=hora, minute=0, second=0)
+
+    ok = ~np.isnan(cols["HGHT"]) & ~np.isnan(cols["TEMP"])
+    cols = {k: v[ok] for k, v in cols.items()}
+    # Alta resolución: puede repetir alturas. Se queda con la primera de cada una.
+    _, primeras = np.unique(cols["HGHT"], return_index=True)
+    primeras = np.sort(primeras)
+    orden = primeras[np.argsort(cols["HGHT"][primeras], kind="stable")]
+    cols = {k: v[orden] for k, v in cols.items()}
+    if len(cols["HGHT"]) < 2:
+        return None
+    return Sondeo(estacion, fecha, cols)
+
+
 def leer(ruta: str | Path) -> list[Sondeo]:
-    return parsear_texto(Path(ruta).read_text(encoding="utf-8", errors="replace"))
+    ruta = Path(ruta)
+    texto = ruta.read_text(encoding="utf-8", errors="replace")
+    if texto.lstrip().lower().startswith("time,"):
+        s = parsear_csv(texto, ruta.name)
+        return [s] if s else []
+    return parsear_texto(texto)
 
 
 @dataclass

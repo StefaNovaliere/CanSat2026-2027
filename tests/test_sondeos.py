@@ -55,3 +55,23 @@ def test_cli_genera_csv_y_grafico(tmp_path):
     sondeos.main([str(FIXTURE), "--csv", str(csv_out), "--grafico", str(png_out)])
     assert csv_out.read_text().count("\n") == 3
     assert png_out.stat().st_size > 10_000
+
+
+CSV_REAL = Path(__file__).parent / "fixtures" / "2025061512-87344_recorte.csv"
+
+
+def test_csv_de_la_pagina_nueva():
+    # Recorte de los primeros 80 segundos de un sondeo real (Wyoming, 87344, 15/06/2025 12Z).
+    (s,) = sondeos.leer(CSV_REAL)
+    assert s.estacion == "87344"
+    assert s.fecha == datetime(2025, 6, 15, 12, tzinfo=timezone.utc)
+    assert s.alt_suelo_m == 492
+    assert s.temp_c[0] == pytest.approx(1.2)
+    assert np.all(np.diff(s.alt_m) > 0)
+    assert sondeos.analizar_capa(s, 50).hay_inversion()
+
+
+def test_csv_sin_nombre_estandar_usa_hora_sinoptica():
+    s = sondeos.parsear_csv(CSV_REAL.read_text(), "cualquier_nombre.csv")
+    assert s.estacion is None
+    assert s.fecha == datetime(2025, 6, 15, 12, tzinfo=timezone.utc)

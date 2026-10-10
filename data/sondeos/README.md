@@ -1,9 +1,10 @@
 # Radiosondeos
 
-Acá van los sondeos de Córdoba Aeropuerto (estación 87344, SACO) bajados de la página de la Universidad de Wyoming (Upper Air Soundings), en formato de texto (TEXT:LIST).
+Acá van los sondeos de Córdoba Aeropuerto (estación 87344, SACO) bajados de la página de la Universidad de Wyoming.
 
-- Un archivo por mes, por ejemplo `87344_2025_06.txt`.
-- Bajar todos los horarios disponibles (00Z y 12Z) para comparar noche y mañana. 12Z son las 9 de la mañana nuestras.
+- La página nueva da un sondeo por consulta. Se baja en CSV y se deja con el nombre que trae, por ejemplo `2025061512-87344.csv` (fecha, hora UTC y estación): de ahí el script saca la fecha.
+- Se baja desde el formulario de la página (weather.uwyo.edu, Upper Air, Soundings): fecha, hora 12Z, estación 87344 y CSV como tipo de salida.
+- Córdoba lanza sobre todo a las 12Z, que son las 9 de la mañana nuestras. Si una fecha no tiene datos, ese día no hubo lanzamiento.
 - No editar los archivos a mano. Si hace falta limpiar algo, que lo haga el script.
 
 Anotar abajo de dónde y cuándo se bajó cada archivo, que lo vamos a tener que citar en el PDR.
@@ -11,13 +12,13 @@ Anotar abajo de dónde y cuándo se bajó cada archivo, que lo vamos a tener que
 Para analizarlos:
 
 ```
-python -m cansat.sondeos data/sondeos/*.txt --capa 400 --grafico salidas/sondeos.png --csv salidas/sondeos.csv
+python -m cansat.sondeos data/sondeos/*.csv --capa 400 --grafico salidas/sondeos.png --csv salidas/sondeos.csv
 ```
 
 Ojo: SACO está al lado de la ciudad, no en el lugar de lanzamiento. Sirve como referencia de cómo se comporta la capa cerca del suelo, no como dato exacto del sitio.
 
 ## Archivos
 
-| Archivo | Período | Fecha de descarga | Quién |
+| Archivo | Sondeo | Fecha de descarga | Quién |
 | --- | --- | --- | --- |
-| | | | |
+| `2025061512-87344.csv` | 15/06/2025 12Z (lanzado 11:38 UTC) | 09/10/2026 | |
